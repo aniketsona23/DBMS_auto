@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Make Tests — SQL Parser UI</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <h1>Make Tests — SQL Parser UI</h1>
+
+    <section class="panel db-config">
+      <h2>Database Configuration</h2>
+      <div class="db-form">
+        <div class="form-row">
+          <label for="dbHost">Host:</label>
+          <input type="text" id="dbHost" value="localhost" placeholder="localhost or IP address" />
+        </div>
+        <div class="form-row">
+          <label for="dbPort">Port:</label>
+          <input type="number" id="dbPort" value="3306" placeholder="3306" />
+        </div>
+        <div class="form-row">
+          <label for="dbUser">Username:</label>
+          <input type="text" id="dbUser" placeholder="root" />
+        </div>
+        <div class="form-row">
+          <label for="dbPass">Password:</label>
+          <input type="password" id="dbPass" placeholder="database password" />
+        </div>
+        <div class="form-row" style="gap:20px;">
+          <div style="flex:1; display:flex; align-items:center; gap:12px;">
+            <label for="dbNameSample" style="min-width:150px;">Sample Database:</label>
+            <input type="text" id="dbNameSample" placeholder="sample database" />
+          </div>
+          <div style="flex:1; display:flex; align-items:center; gap:12px;">
+            <label for="dbNameEval" style="min-width:150px;">Test Database:</label>
+            <input type="text" id="dbNameEval" placeholder="evaluation database" />
+          </div>
+        </div>
+        <div class="form-row">
+          <button id="testConnectionBtn" class="secondary">Test Connection</button>
+          <span id="connectionStatus"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>📝 SQL Queries</h3>
+      <label for="solutionSqlInput">Solution SQL file (solution.sql):</label>
+      <div class="row">
+        <input id="solutionSqlInput" type="file" accept=".sql" style="flex: 1;" />
+        <span id="solutionSqlStatus" style="margin-left: 8px;"></span>
+      </div>
+      
+      <label for="questionsPdfInput">Questions PDF (optional - included in student package):</label>
+      <div class="row">
+        <input id="questionsPdfInput" type="file" accept=".pdf" style="flex: 1;" />
+        <span id="pdfStatus" style="margin-left: 8px;"></span>
+      </div>
+      
+      <label>Database Setup Scripts (optional - for reset):</label>
+      <div class="row">
+        <div style="flex:1;">
+          <label for="dbFileInputSample">Sample DB Script:</label>
+          <div class="row">
+            <input id="dbFileInputSample" type="file" accept=".sql" style="flex: 1;" />
+            <button id="resetDbBtnSample">🔄 Reset Sample DB</button>
+          </div>
+        </div>
+        <div style="flex:1;">
+          <label for="dbFileInputEval">Test DB Script:</label>
+          <div class="row">
+            <input id="dbFileInputEval" type="file" accept=".sql" style="flex: 1;" />
+            <button id="resetDbBtnEval">🔄 Reset Test DB</button>
+          </div>
+        </div>
+      </div>
+
+      <label for="allowedStartTime">Allowed start time (HH:MM, students can run at/after this time today):</label>
+      <div class="row">
+        <input id="allowedStartTime" type="time" style="flex: 1;" />
+      </div>
+      
+      <div class="row">
+        <button id="parseBtn" class="primary">Parse Queries</button>
+        <button id="createBtn" class="primary" disabled>Create Tests</button>
+        <button id="clearBtn">Clear</button>
+      </div>
+      <div class="row" id="packageRow" style="display: none; margin-top: 12px;">
+        <button id="downloadPackageBtn" class="success">📦 Download Student Package (ZIP)</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>Output / Logs</h3>
+      <pre id="output"></pre>
+    </section>
+
+    <section class="panel">
+      <h2>Parsed Queries</h2>
+      <div id="queries"></div>
+    </section>
+
+    <section class="panel actions">
+      <p><strong>Workflow:</strong></p>
+      <ol>
+        <li>Upload your <code>solution.sql</code> file containing SQL queries</li>
+        <li>Click <strong>Parse Queries</strong> to analyze your SQL and display parsed queries (comments are filtered out)</li>
+        <li>Review and adjust constraints, scores, and query details as needed</li>
+        <li>Click <strong>Create Tests</strong> to generate <code>tests.json</code> and build the student executable</li>
+        <li>Download the student package when ready</li>
+      </ol>
+    </section>
+
+    <footer>
+      <small>This tool parses SQL scripts, allows selecting constraints (require/forbid JOIN, nested SELECT), and generates a JSON input for <code>create_tests</code>.</small>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
