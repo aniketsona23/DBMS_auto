@@ -9,7 +9,7 @@ import tempfile
 import os
 
 try:
-    import pymysql
+    import pymysql  # type: ignore
 except Exception:
     pymysql = None
 
@@ -69,13 +69,18 @@ def reset_database_via_cli(sql_text, db_config, repo_root):
         str(db_config["port"]),
         "-u",
         db_config["user"],
-        "-p",
     ]
+
+    # Only add -p flag if no password provided (will prompt interactively)
+    # If password is provided, use MYSQL_PWD env variable instead
+    if not db_config.get("password"):
+        mysql_cmd.append("-p")
+
     if db_config["database"]:
         mysql_cmd.append(db_config["database"])
 
     env = os.environ.copy()
-    if db_config["password"]:
+    if db_config.get("password"):
         env["MYSQL_PWD"] = db_config["password"]
 
     try:

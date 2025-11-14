@@ -11,9 +11,6 @@ import os
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = THIS_DIR  # In standalone mode, current dir is the root
 
-# Not used by student runner, kept for compatibility
-WEB_DIR = None
-
 
 def load_env_file():
     env_vars = {}
@@ -47,8 +44,8 @@ def get_db_config(env_vars=None):
         "host": os.environ.get("DB_HOST", env_vars.get("DB_HOST", "127.0.0.1")),
         "port": int(os.environ.get("DB_PORT", env_vars.get("DB_PORT", "3306"))),
         "user": os.environ.get("DB_USER", env_vars.get("DB_USER", "root")),
-        "password": os.environ.get("DB_PASS", env_vars.get("DB_PASS")),
-        "database": os.environ.get("DB_NAME", env_vars.get("DB_NAME")),
+        "password": os.environ.get("DB_PASS", env_vars.get("DB_PASS", "")),
+        "database": os.environ.get("DB_NAME", env_vars.get("DB_NAME", "")),
     }
 
 

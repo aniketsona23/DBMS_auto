@@ -29,9 +29,9 @@ pyinstaller --onefile \
 --clean \
 --strip \
 --noconfirm \
---add-data "sql_parser.py:." \
---add-data "db_utils.py:." \
+--add-data "../shared:shared" \
 --add-data "config.py:." \
+--add-data "test_utils.py:." \
 --hidden-import pymysql \
 --hidden-import cryptography \
 run_testcase.py

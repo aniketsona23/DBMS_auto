@@ -13,7 +13,6 @@ REPO_ROOT = os.path.dirname(THIS_DIR)
 WEB_DIR = os.path.join(THIS_DIR, "public")
 
 
-
 def load_env_file():
     """Load environment variables from .env.local or .env file."""
     env_vars = {}

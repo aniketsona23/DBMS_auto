@@ -227,7 +227,6 @@ def generate_test_for_view(query, item, cursor):
     Always returns a valid test_query regardless of execution success.
     """
     view_name = extract_view_name(query)
-    print(query, "For view")
     if not view_name:
         # Still provide a placeholder test_query
         return {
@@ -248,13 +247,9 @@ def generate_test_for_view(query, item, cursor):
 
     # Execute CREATE VIEW
     view_created = False
-    print("Hii")
     try:
         cursor.execute(query)
         cursor.connection.commit()  # Commit the view creation
-        print(query)
-        print("view is created")
-        view_created = True
     except Exception as e:
         # View creation failed - still return test_query with empty expected_output
         result["error"] = f"Failed to create view during test generation: {e}"

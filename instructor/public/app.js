@@ -24,6 +24,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const queriesDiv = document.getElementById("queries");
   const output = document.getElementById("output");
   const downloadPackageBtn = document.getElementById("downloadPackageBtn");
+  const downloadListScoresBtn = document.getElementById(
+    "downloadListScoresBtn"
+  );
   const packageRow = document.getElementById("packageRow");
   const allowedStartTime = document.getElementById("allowedStartTime");
 
@@ -386,6 +389,41 @@ document.addEventListener("DOMContentLoaded", () => {
           "Student package downloaded successfully!\nContains: questions.pdf (if provided), solution.sql (empty), sample_tests.json (plain), eval_tests.json.enc (encrypted), run_testcase executable, .env.local (with DB credentials)";
       } catch (e) {
         output.textContent = `Package download failed: ${e}`;
+      }
+    });
+  }
+
+  // Download list_scores executable button
+  if (downloadListScoresBtn) {
+    downloadListScoresBtn.addEventListener("click", async () => {
+      try {
+        output.textContent = "Downloading list_scores executable...";
+
+        const res = await fetch("/download-list-scores", {
+          method: "GET",
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          output.textContent = `Download failed: ${text}`;
+          return;
+        }
+
+        // Download the executable
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "list_scores";
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        output.textContent =
+          "list_scores executable downloaded successfully!\nUse this to process student submission ZIPs and generate grades.xlsx";
+      } catch (e) {
+        output.textContent = `Download failed: ${e}`;
       }
     });
   }
