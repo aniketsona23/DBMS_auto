@@ -4,12 +4,19 @@ handlers.py
 
 HTTP request handlers for the test generation server.
 """
+
 import json
 import logging
 import mimetypes
 import os
 from typing import Any, Tuple
-from instructor.config import REPO_ROOT, WEB_DIR
+from shared.constants import (
+    REPO_PATH,
+    INSTRUCTOR_PUBLIC_DIR,
+    LIST_SCORES_EXECUTABLE_PATH,
+    TESTS_JSON_PATH,
+    SAMPLE_TESTS_JSON_PATH,
+)
 from shared.db_utils import (
     get_db_connection,
     reset_database_via_cli,
@@ -63,6 +70,8 @@ def handle_reset_db(body: bytes, content_type: str) -> Tuple[int, Any, str]:
     payload, error = parse_json_body(body)
     if error:
         return 400, error, MIME_TEXT
+    if not isinstance(payload, dict):
+        return 400, "Invalid JSON payload", MIME_TEXT
 
     sql_text = payload.get("sql", "")
     if not sql_text:
@@ -72,7 +81,7 @@ def handle_reset_db(body: bytes, content_type: str) -> Tuple[int, Any, str]:
     if err:
         return 400, err, MIME_TEXT
 
-    success, output = reset_database_via_cli(sql_text, db_config, REPO_ROOT)
+    success, output = reset_database_via_cli(sql_text, db_config, str(REPO_PATH))
     return (200 if success else 500), output, MIME_TEXT
 
 
@@ -81,6 +90,8 @@ def handle_test_connection(body: bytes) -> Tuple[int, Any, str]:
     payload, error = parse_json_body(body)
     if error:
         return 400, error, MIME_TEXT
+    if not isinstance(payload, dict):
+        return 400, "Invalid JSON payload", MIME_TEXT
 
     db_config, err = get_db_config_from_payload(payload, key_name=None)
     if err:
@@ -101,6 +112,8 @@ def handle_create_tests(body: bytes) -> Tuple[int, Any, str]:
     payload, error = parse_json_body(body)
     if error:
         return 400, error, MIME_TEXT
+    if not isinstance(payload, dict):
+        return 400, "Invalid JSON payload", MIME_TEXT
 
     ok, data, err, status = create_tests_artifacts(payload)
     if not ok:
@@ -114,7 +127,7 @@ def handle_static_file(path: str) -> Tuple[int, Any, str]:
     rel = "index.html" if path == "/" else path.lstrip("/")
 
     # Secure path resolution
-    abs_web_dir = os.path.abspath(WEB_DIR)
+    abs_web_dir = os.path.abspath(str(INSTRUCTOR_PUBLIC_DIR))
     requested = os.path.abspath(os.path.join(abs_web_dir, rel))
 
     # Security check: ensure requested path is inside WEB_DIR
@@ -140,9 +153,8 @@ def handle_static_file(path: str) -> Tuple[int, Any, str]:
 
 def handle_download_list_scores() -> Tuple[int, Any, str]:
     """Download the list_scores executable."""
-    list_scores_path = os.path.join(REPO_ROOT, "instructor", "dist", "list_scores")
 
-    if not os.path.exists(list_scores_path):
+    if not LIST_SCORES_EXECUTABLE_PATH.exists():
         return (
             404,
             "list_scores executable not found. Run create-tests first.",
@@ -150,7 +162,7 @@ def handle_download_list_scores() -> Tuple[int, Any, str]:
         )
 
     try:
-        with open(list_scores_path, "rb") as f:
+        with open(LIST_SCORES_EXECUTABLE_PATH, "rb") as f:
             data = f.read()
         return 200, data, MIME_OCTET
     except Exception as e:
@@ -167,17 +179,14 @@ def handle_create_package(body: bytes, content_type: str) -> Tuple[int, Any, str
         db_credentials, pdf_content = extract_multipart_data(body, content_type)
 
     # Check for artifacts existence
-    tests_json_path = os.path.join(REPO_ROOT, "tests.json")
-    sample_tests_path = os.path.join(REPO_ROOT, "sample_tests.json")
-
-    if not os.path.exists(tests_json_path) or not os.path.exists(sample_tests_path):
+    if not TESTS_JSON_PATH.exists() or not SAMPLE_TESTS_JSON_PATH.exists():
         return 400, "Required test artifacts missing. Create tests first.", MIME_TEXT
 
     try:
         # Read files
-        with open(tests_json_path, "r", encoding="utf-8") as f:
+        with open(TESTS_JSON_PATH, "r", encoding="utf-8") as f:
             eval_tests_content = f.read()
-        with open(sample_tests_path, "r", encoding="utf-8") as f:
+        with open(SAMPLE_TESTS_JSON_PATH, "r", encoding="utf-8") as f:
             sample_tests_content = f.read()
 
         ok, zip_bytes, err = create_student_package(

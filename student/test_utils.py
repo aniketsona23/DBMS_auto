@@ -10,6 +10,7 @@ Includes:
   - Decryption loader
   - Printing & packaging helpers
 """
+
 from __future__ import annotations
 
 import json
@@ -19,10 +20,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from datetime import datetime
 
-try:
-    from cryptography.fernet import Fernet  # type: ignore
-except ImportError:  # pragma: no cover
-    Fernet = None  # type: ignore
+from shared.constants import RESULTS_FILENAME_TEMPLATE, FieldNames
+from shared.logger import get_logger
+from shared.encryption import encrypt_string, decrypt_data
+from shared.models import (
+    QuestionResult,
+    create_results_payload,
+    test_result_to_question_result,
+)
+
+logger = get_logger(__name__)
 
 
 # ------------------------- Result Helpers ------------------------- #
@@ -34,14 +41,14 @@ def make_result(
     score_mult: float,
     **extra: Any,
 ) -> Dict[str, Any]:
-    max_score = test_data.get("score", 1)
+    max_score = test_data.get(FieldNames.SCORE, 1)
     score = max_score * score_mult
     return {
-        "test": test_key,
-        "status": status,
-        "message": message,
-        "score": score,
-        "max_score": max_score,
+        FieldNames.TEST: test_key,
+        FieldNames.STATUS: status,
+        FieldNames.MESSAGE: message,
+        FieldNames.SCORE: score,
+        FieldNames.MAX_SCORE: max_score,
         **extra,
     }
 
@@ -116,49 +123,48 @@ def execute_query(query: str, conn) -> Tuple[bool, Any]:
 
 
 def print_test_header(test_key: str, student_query: str) -> None:
-    print(f"\nTesting {test_key}:")
-    print(f"Query: {student_query[:200]}{'...' if len(student_query) > 200 else ''}")
-    print("-" * 60)
+    logger.info(f"Testing {test_key}:")
 
 
 def violates_constraints(student_query: str, test: Dict[str, Any]) -> str:
     q = student_query.lower()
-    if test.get("forbid_join") and re.search(r"\bjoin\b", q, re.I):
-        return "forbid_join"
-    if test.get("require_join") and not re.search(r"\bjoin\b", q, re.I):
-        return "require_join"
-    if test.get("require_nested_select") and not re.search(
+    if test.get(FieldNames.FORBID_JOIN) and re.search(r"\bjoin\b", q, re.I):
+        return FieldNames.FORBID_JOIN
+    if test.get(FieldNames.REQUIRE_JOIN) and not re.search(r"\bjoin\b", q, re.I):
+        return FieldNames.REQUIRE_JOIN
+    if test.get(FieldNames.REQUIRE_NESTED_SELECT) and not re.search(
         r"\([ \t\n\r]*select", q, re.I
     ):
-        return "require_nested_select"
-    if test.get("forbid_nested_select") and re.search(r"\([ \t\n\r]*select", q, re.I):
-        return "forbid_nested_select"
-    if test.get("forbid_group_by") and re.search(r"\bgroup\s+by\b", q, re.I):
-        return "forbid_group_by"
-    if test.get("require_group_by") and not re.search(r"\bgroup\s+by\b", q, re.I):
-        return "require_group_by"
-    if test.get("forbid_order_by") and re.search(r"\border\s+by\b", q, re.I):
-        return "forbid_order_by"
-    if test.get("require_order_by") and not re.search(r"\border\s+by\b", q, re.I):
-        return "require_order_by"
+        return FieldNames.REQUIRE_NESTED_SELECT
+    if test.get(FieldNames.FORBID_NESTED_SELECT) and re.search(
+        r"\([ \t\n\r]*select", q, re.I
+    ):
+        return FieldNames.FORBID_NESTED_SELECT
+    if test.get(FieldNames.FORBID_GROUP_BY) and re.search(r"\bgroup\s+by\b", q, re.I):
+        return FieldNames.FORBID_GROUP_BY
+    if test.get(FieldNames.REQUIRE_GROUP_BY) and not re.search(
+        r"\bgroup\s+by\b", q, re.I
+    ):
+        return FieldNames.REQUIRE_GROUP_BY
+    if test.get(FieldNames.FORBID_ORDER_BY) and re.search(r"\border\s+by\b", q, re.I):
+        return FieldNames.FORBID_ORDER_BY
+    if test.get(FieldNames.REQUIRE_ORDER_BY) and not re.search(
+        r"\border\s+by\b", q, re.I
+    ):
+        return FieldNames.REQUIRE_ORDER_BY
     return ""
 
 
 # ------------------------- Encryption / Packaging ------------------------- #
-def load_and_decrypt_tests(
-    encrypted_path: Path, encryption_key: bytes, crypto_available: bool
-) -> Dict[str, Any]:
+def load_and_decrypt_tests(encrypted_path: Path, encryption_key: bytes) -> Dict:
     if not encryption_key:
         raise Exception("Encryption key not set.")
-    if not crypto_available or Fernet is None:
-        raise Exception("Cryptography library not available.")
     try:
         encrypted_data = encrypted_path.read_bytes()
-        fernet = Fernet(encryption_key)
-        decrypted = fernet.decrypt(encrypted_data)
+        decrypted = decrypt_data(encrypted_data, encryption_key)
         return json.loads(decrypted.decode("utf-8"))
     except Exception as e:  # pragma: no cover - error path
-        raise Exception(f"Failed to decrypt tests: {e}")
+        raise Exception(f"Failed to load tests: {e}")
 
 
 def save_encrypted_report_and_zip(
@@ -166,34 +172,29 @@ def save_encrypted_report_and_zip(
     solution_path: Path,
     student_id: str,
     encryption_key: bytes,
-    crypto_available: bool,
 ) -> None:
-    encrypted_report_name = f"{student_id}_results.json.enc"
-    encrypted_report_path = Path.cwd() / encrypted_report_name
-    if not (crypto_available and encryption_key and Fernet):
-        print("Skipping encryption: cryptography or key unavailable.")
+    report_name = RESULTS_FILENAME_TEMPLATE.format(student_id=student_id)
+    report_path = Path.cwd() / report_name
+    if not encryption_key:
+        logger.warning("Skipping encryption: encryption key not available.")
         return
     try:
-        questions = {
-            tr.get("test", ""): (
-                "Pass"
-                if tr.get("status") == "PASS"
-                else (tr.get("message") or tr.get("status") or "FAIL")
-            )
-            for tr in results.get("test_results", [])
+        questions: Dict[str, QuestionResult] = {
+            tr.get(FieldNames.TEST, ""): test_result_to_question_result(tr)
+            for tr in results.get(FieldNames.TEST_RESULTS, [])
         }
-        payload = {
-            "student_id": student_id,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "total_score": results.get("total_score", 0),
-            "questions": questions,
-        }
-        fernet = Fernet(encryption_key)
-        encrypted_data = fernet.encrypt(json.dumps(payload, indent=2).encode("utf-8"))
-        encrypted_report_path.write_bytes(encrypted_data)
-        print(f"Encrypted results saved: {encrypted_report_path.name}")
+        payload = create_results_payload(
+            student_id=student_id,
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            total_score=results.get(FieldNames.TOTAL_SCORE, 0),
+            max_score=results.get(FieldNames.MAX_SCORE, 0),
+            questions=questions,
+        )
+        encrypted_data = encrypt_string(json.dumps(payload, indent=2), encryption_key)
+        report_path.write_bytes(encrypted_data)
+        logger.info(f"Encrypted results saved: {report_path.name}")
     except Exception as e:
-        print(f"Failed to create encrypted results: {e}")
+        logger.error(f"Failed to create results: {e}")
         return
     # ZIP
     zip_path = Path.cwd() / f"{student_id}_submission.zip"
@@ -201,12 +202,12 @@ def save_encrypted_report_and_zip(
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             if solution_path.exists():
                 zf.write(solution_path, arcname="solution.sql")
-            if encrypted_report_path.exists():
-                zf.write(encrypted_report_path, arcname=encrypted_report_path.name)
-        print(f"Submission ZIP created: {zip_path.name}")
-        print(f"Files inside: solution.sql, {encrypted_report_path.name}")
+            if report_path.exists():
+                zf.write(report_path, arcname=report_path.name)
+        logger.info(f"Submission ZIP created: {zip_path.name}")
+        logger.info(f"Files inside: solution.sql, {report_path.name}")
     except Exception as e:
-        print(f"Failed to create submission zip: {e}")
+        logger.error(f"Failed to create submission zip: {e}")
 
 
 # ------------------------- Printing ------------------------- #
@@ -221,48 +222,49 @@ def print_results(results: Dict[str, Any]) -> None:
     YELLOW = "\033[93m" if supports_color() else ""
     RESET = "\033[0m" if supports_color() else ""
 
-    print("\n" + "=" * 70)
-    print("TEST RESULTS")
-    print("=" * 70)
+    logger.info("\n" + "=" * 70)
+    logger.info("TEST RESULTS")
+    logger.info("=" * 70)
 
     if "error" in results:
-        print(f"\n{RED}ERROR: {results['error']}{RESET}")
+        logger.error(f"ERROR: {results['error']}")
         return
 
-    for r in results.get("test_results", []):
-        test_key = r.get("test", "?")
-        status = r.get("status", "UNKNOWN")
-        msg = r.get("message", "")
-        score = r.get("score", 0)
-        max_score = r.get("max_score", 1)
-        student_query = r.get("student_query", "")
+    for r in results.get(FieldNames.TEST_RESULTS, []):
+        test_key = r.get(FieldNames.TEST, "?")
+        status = r.get(FieldNames.STATUS, "UNKNOWN")
+        msg = r.get(FieldNames.MESSAGE, "")
+        score = r.get(FieldNames.SCORE, 0)
+        max_score = r.get(FieldNames.MAX_SCORE, 1)
+        student_query = r.get(FieldNames.STUDENT_QUERY, "")
 
-        if status == "PASS":
+        if status == FieldNames.STATUS_PASS:
             indicator, status_line = f"{GREEN}✓{RESET}", f"{GREEN}{status}{RESET}"
-        elif status == "FAIL":
+        elif status == FieldNames.STATUS_FAIL:
             indicator, status_line = f"{RED}✗{RESET}", f"{RED}{status}{RESET}"
-        elif status in ("ERROR", "WARNING"):
+        elif status in (FieldNames.STATUS_ERROR, FieldNames.STATUS_WARNING):
             indicator, status_line = f"{YELLOW}⚠{RESET}", f"{YELLOW}{status}{RESET}"
         else:
             indicator, status_line = "?", status
 
-        print(f"\n{indicator} {test_key}: {status_line} ({score}/{max_score} points)")
+        logger.info(
+            f"{indicator} {test_key}: {status_line} ({score}/{max_score} points)"
+        )
         if student_query:
             query_display = (
                 student_query[:150] + "..."
                 if len(student_query) > 150
                 else student_query
             )
-            print(f"   Query: {query_display}")
-        print(f"   {msg}")
-        if "failures" in r:
-            for failure in r["failures"]:
-                print(f"     - {failure}")
+            logger.info(f"   Query: {query_display}")
+        logger.info(f"   {msg}")
+        if FieldNames.FAILURES in r:
+            for failure in r[FieldNames.FAILURES]:
+                logger.info(f"     - {failure}")
 
-    total = results.get("total_score", 0)
-    max_s = results.get("max_score", 0)
+    total = results.get(FieldNames.TOTAL_SCORE, 0)
+    max_s = results.get(FieldNames.MAX_SCORE, 0)
     perc = results.get("percentage", 0.0)
-    color = GREEN if total == max_s and max_s > 0 else RED
-    print("\n" + "=" * 70)
-    print(f"FINAL SCORE: {color}{total}{RESET}/{max_s} ({perc:.2f}%){RESET}")
-    print("=" * 70 + "\n")
+    logger.info("\n" + "=" * 70)
+    logger.info(f"FINAL SCORE: {total}/{max_s} ({perc:.2f}%)")
+    logger.info("=" * 70 + "\n")

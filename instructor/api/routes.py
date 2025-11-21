@@ -4,6 +4,7 @@ routes.py
 
 Central routing for API endpoints. Keeps HTTP routing logic out of the server entrypoint.
 """
+
 from instructor.api.handlers import (
     handle_parse,
     handle_reset_db,

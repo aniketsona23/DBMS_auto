@@ -7,9 +7,13 @@ Provides endpoints for parsing SQL, resetting database, and creating tests.
 
 This server is for local development only.
 """
+
 from http.server import HTTPServer
-from instructor.config import get_server_config
+from shared.constants import SERVER_HOST, SERVER_PORT
+from shared.logger import get_logger
 from instructor.handler import Handler
+
+logger = get_logger(__name__)
 
 
 # `Handler` implementation lives in `handlers/handler.py`.
@@ -17,13 +21,12 @@ from instructor.handler import Handler
 
 def main():
     """Start the HTTP server."""
-    config = get_server_config()
-    host = config["host"]
-    port = config["port"]
+    host = SERVER_HOST
+    port = SERVER_PORT
 
-    print(f"run_server: listening on http://{host}:{port}/")
-    print(
-        f"  Endpoints: /parse, /test-connection, /reset-db, /create-tests, /create-package"
+    logger.info(f"run_server: listening on http://{host}:{port}/")
+    logger.info(
+        "  Endpoints: /parse, /test-connection, /reset-db, /create-tests, /create-package"
     )
 
     # Show binary status
@@ -32,7 +35,7 @@ def main():
         server = HTTPServer((host, port), Handler)
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping server...")
+        logger.info("\nStopping server...")
 
 
 if __name__ == "__main__":

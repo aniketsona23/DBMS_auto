@@ -34,12 +34,12 @@ def get_db_config_from_payload(
             return None, f"Missing or invalid '{key_name}' in payload"
         return None, "Missing or invalid DB credential object in payload"
 
-    required = ["host", "port", "user", "password", "database"]
-    missing = [k for k in required if creds.get(k) is None]
+    REQUIRED_KEYS = ["host", "port", "user", "password", "database"]
+    missing = REQUIRED_KEYS - creds.keys()
     if missing:
-        return None, f"Missing DB credential keys: {', '.join(missing)}"
+        return None, f"VALIDATION: Missing DB credential keys: {', '.join(missing)}"
 
-    return {k: creds.get(k) for k in required}, None
+    return {k: creds[k] for k in REQUIRED_KEYS}, None
 
 
 def sort_key_numeric(key: str) -> int:

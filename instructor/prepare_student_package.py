@@ -10,61 +10,68 @@ This script reuses the service-layer helpers to avoid duplication.
 Usage:
     python prepare_student_package.py
 """
+
 import sys
 from pathlib import Path
+from shared.logger import get_logger
+from shared.constants import KEY_PATH
+from shared.encryption import get_or_create_key
+from instructor.api.services import (
+    build_student_executable,
+)  # noqa: E402
 
 # Ensure repository root is on sys.path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from instructor.api.services import (
-    _get_or_create_key,
-    build_student_executable,
-)  # noqa: E402
+
+logger = get_logger(__name__)
 
 
 def main() -> int:
-    print("=" * 70)
-    print("Student Package Preparation Tool")
-    print("=" * 70)
-    print()
+    logger.info("=" * 70)
+    logger.info("Student Package Preparation Tool")
+    logger.info("=" * 70)
+    logger.info("")
 
     # Step 1: Ensure encryption key exists (creates if missing)
-    print("Step 1: Ensuring encryption key...")
+    logger.info("Step 1: Ensuring encryption key...")
     try:
-        key = _get_or_create_key()
-        print(f"✓ Encryption key ready ({len(key)} bytes)")
+        key = get_or_create_key(KEY_PATH)
+        logger.info(f"✓ Encryption key ready ({len(key)} bytes)")
     except Exception as e:
-        print(f"Error: Failed to create/load encryption key: {e}")
+        logger.error(f"Error: Failed to create/load encryption key: {e}")
         return 1
-    print()
+    logger.info("")
 
     # Step 2: Build standalone executable using shared service logic
-    print("Step 2: Building standalone executable (this may take a few minutes)...")
+    logger.info(
+        "Step 2: Building standalone executable (this may take a few minutes)..."
+    )
     ok, message, exe_path = build_student_executable()
-    print(message)
+    logger.info(message)
     if not ok or not exe_path:
         return 1
 
     size_mb = Path(exe_path).stat().st_size / (1024 * 1024)
-    print(f"✓ Executable created: {exe_path}")
-    print(f"  Size: {size_mb:.2f} MB")
-    print()
+    logger.info(f"✓ Executable created: {exe_path}")
+    logger.info(f"  Size: {size_mb:.2f} MB")
+    logger.info("")
 
-    print("=" * 70)
-    print("✓ Student package prepared successfully!")
-    print("=" * 70)
-    print()
-    print("Next steps:")
-    print(f"1. The executable is ready at: {exe_path}")
-    print(
+    logger.info("=" * 70)
+    logger.info("✓ Student package prepared successfully!")
+    logger.info("=" * 70)
+    logger.info("")
+    logger.info("Next steps:")
+    logger.info(f"1. The executable is ready at: {exe_path}")
+    logger.info(
         "2. Include this executable in the student package ZIP (services.create_student_package will embed it if present)"
     )
-    print()
-    print("Students can run:")
-    print("  chmod +x run_testcase")
-    print("  ./run_testcase solution.sql")
-    print()
+    logger.info("")
+    logger.info("Students can run:")
+    logger.info("  chmod +x run_testcase")
+    logger.info("  ./run_testcase solution.sql")
+    logger.info("")
     return 0
 
 

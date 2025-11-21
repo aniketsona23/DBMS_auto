@@ -52,3 +52,5 @@ student_package.zip
 *.tmp
 *.temp
 ~$*
+
+*.png

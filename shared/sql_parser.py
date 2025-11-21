@@ -10,6 +10,7 @@ Simple SQL script parser that mirrors the behavior of the C++ `sql_parser.cpp`:
 Provides a simple function `parse_sql(script_text)` that returns a list of
 dicts:{"query": ..., "type": ...}
 """
+
 import re
 import json
 from typing import List, Dict
@@ -149,4 +150,8 @@ if __name__ == "__main__":
         with open(sys.argv[1], "r", encoding="utf-8") as f:
             text = f.read()
     res = parse_sql(text)
-    print(json.dumps(res, indent=2))
+    # Output parse result via logger to avoid direct printing
+    from shared.logger import get_logger
+
+    _logger = get_logger(__name__)
+    _logger.info(json.dumps(res, indent=2))

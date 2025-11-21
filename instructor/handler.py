@@ -5,6 +5,7 @@ handler.py
 HTTP request handler class. This file centralizes the BaseHTTPRequestHandler
 subclass so `run_server.py` only starts the server.
 """
+
 from http.server import BaseHTTPRequestHandler
 import sys
 from urllib.parse import urlparse
@@ -18,8 +19,6 @@ class Handler(BaseHTTPRequestHandler):
     Class attributes `ENV_VARS` and `DB_CONFIG` are loaded once when the
     class is defined so handlers can access database configuration.
     """
-
-    # No server-side DB config; credentials must come from request payload
 
     def _respond(self, code, body, content_type="text/plain"):
         """Send HTTP response with proper headers."""

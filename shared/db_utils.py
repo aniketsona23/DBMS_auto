@@ -4,6 +4,7 @@ db_utils.py
 
 Database utilities for connecting to MySQL and executing queries.
 """
+
 import subprocess
 import tempfile
 import os

@@ -28,7 +28,6 @@ document.addEventListener("DOMContentLoaded", () => {
     "downloadListScoresBtn"
   );
   const packageRow = document.getElementById("packageRow");
-  const allowedStartTime = document.getElementById("allowedStartTime");
 
   // Store PDF file and solution SQL content
   let questionsPdfFile = null;
@@ -242,7 +241,6 @@ document.addEventListener("DOMContentLoaded", () => {
         queries: items,
         sample_db_credentials: sampleCreds,
         eval_db_credentials: evalCreds,
-        allowed_after: allowedStartTime && allowedStartTime.value,
       };
 
       console.log("Sending create-tests payload:", {

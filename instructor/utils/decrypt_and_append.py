@@ -1,19 +1,19 @@
 import os
-import sys
 import json
 import re
 import zipfile
 from pathlib import Path
+from typing import Dict
+from typing import Any
 from openpyxl import Workbook, load_workbook
-from cryptography.fernet import Fernet
 
 
-def get_key():
-    """Get encryption key from environment or use default."""
-    key = os.environ.get("FERNET_KEY")
-    if not key:
-        key = b"nVPZZCjg6EFcWrch2Ivk13WWXNv7uWZGU5C5Vc2ADrw="
-    return key.encode() if isinstance(key, str) else key
+from shared.constants import FieldNames, KEY_PATH
+from shared.logger import get_logger
+from shared.encryption import decrypt_data, get_or_create_key
+from shared.models import QuestionResult, format_question_for_excel
+
+logger = get_logger(__name__)
 
 
 def extract_student_id(filename: str) -> str:
@@ -29,20 +29,34 @@ def extract_student_id(filename: str) -> str:
     return ""
 
 
-def find_results_json(inner_zip_path: Path, key: bytes) -> dict:
+def find_and_decrypt_results(inner_zip_path: Path, key: bytes) -> dict:
     """Find and decrypt results.json from inner ZIP file."""
+    # Prefer files that look like results reports (e.g., '*_results.json.enc')
     with zipfile.ZipFile(inner_zip_path, "r") as inner_zip:
-        for file_info in inner_zip.namelist():
-            if file_info.endswith(".json.enc") or file_info.endswith(
-                "results.json.enc"
-            ):
-                encrypted_data = inner_zip.read(file_info)
-                fernet = Fernet(key)
+        namelist = inner_zip.namelist()
+        # First try to find a results file explicitly
+        results_files = [
+            f for f in namelist if re.search(r"results\.json\.enc$", f, re.I)
+        ]
+        candidates = (
+            results_files
+            if results_files
+            else [f for f in namelist if f.endswith(".json.enc")]
+        )
+
+        for file_info in candidates:
+            data = inner_zip.read(file_info)
+            try:
+                # Try decryption first
                 try:
-                    decrypted_data = fernet.decrypt(encrypted_data)
-                    return json.loads(decrypted_data.decode("utf-8"))
-                except Exception as e:
-                    print(f"[WARNING] Failed to decrypt {file_info}: {e}")
+                    decrypted = decrypt_data(data, key)
+                    decoded_json = json.loads(decrypted.decode("utf-8"))
+                except Exception:
+                    # If decryption fails, try plain JSON
+                    decoded_json = json.loads(data.decode("utf-8"))
+                return decoded_json
+            except Exception as e:
+                logger.warning(f"Failed to decode {file_info}: {e}")
     return {}
 
 
@@ -52,10 +66,10 @@ def process_zip_file(zip_path: Path, key: bytes, excel_path: str) -> bool:
     student_id_from_zip = extract_student_id(filename)
 
     if not student_id_from_zip:
-        print(f"[WARNING] Could not extract student ID from: {filename}")
+        logger.warning(f"Could not extract student ID from: {filename}")
         return False
 
-    print(f"[INFO] Processing {filename} -> Student ID: {student_id_from_zip}")
+    logger.info(f"Processing {filename} -> Student ID: {student_id_from_zip}")
 
     try:
         with zipfile.ZipFile(zip_path, "r") as outer_zip:
@@ -63,7 +77,7 @@ def process_zip_file(zip_path: Path, key: bytes, excel_path: str) -> bool:
             inner_zip_files = [f for f in outer_zip.namelist() if f.endswith(".zip")]
 
             if not inner_zip_files:
-                print(f"[WARNING] No inner ZIP found in {filename}")
+                logger.warning(f"No inner ZIP found in {filename}")
                 return False
 
             # Extract first inner ZIP to temp location
@@ -74,36 +88,28 @@ def process_zip_file(zip_path: Path, key: bytes, excel_path: str) -> bool:
 
             try:
                 # Find and decrypt results.json
-                results = find_results_json(temp_inner, key)
+                results = find_and_decrypt_results(temp_inner, key)
 
                 if not results:
-                    print(f"[WARNING] No results found in {filename}")
+                    logger.warning(f"No results found in {filename}")
                     return False
 
-                # Extract data from results
-                uploaded_id = results.get("student_id", student_id_from_zip)
-                timestamp = results.get("timestamp", "")
-                total_score = results.get("total_score", 0)
-                max_score = results.get("max_score", 0)
-                test_results = results.get("test_results", [])
+                uploaded_id = results.get(FieldNames.STUDENT_ID, student_id_from_zip)
+                timestamp = results.get(FieldNames.TIMESTAMP, "")
+                total_score = results.get(FieldNames.TOTAL_SCORE, 0)
+                max_score = results.get(FieldNames.MAX_SCORE, 0)
 
-                # Build question feedback dictionary
-                questions = {}
-                for test in test_results:
-                    test_key = test.get("test", "")
-                    status = test.get("status", "")
-                    message = test.get("message", "")
-                    score = test.get("score", 0)
-                    max_score_q = test.get("max_score", 0)
+                # Build question feedback dictionary using standardized models
+                questions_data: Dict[str, QuestionResult] = results.get(
+                    FieldNames.QUESTIONS, {}
+                )
+                # Only include keys that look like question keys (q1, q2, ...)
+                questions = {
+                    test_key: format_question_for_excel(test_info)
+                    for test_key, test_info in questions_data.items()
+                    if isinstance(test_key, str) and test_key.startswith("q")
+                }
 
-                    if status == "PASS":
-                        # For passed questions, show the score
-                        questions[test_key] = f"{score}/{max_score_q}"
-                    else:
-                        # For failed questions, show the feedback message
-                        questions[test_key] = message if message else status
-
-                # Append to Excel
                 append_to_excel(
                     excel_path=excel_path,
                     student_id_zip=student_id_from_zip,
@@ -113,7 +119,7 @@ def process_zip_file(zip_path: Path, key: bytes, excel_path: str) -> bool:
                     questions=questions,
                 )
 
-                print(
+                logger.info(
                     f"[SUCCESS] Processed {student_id_from_zip}: {total_score}/{max_score} at {timestamp}"
                 )
                 return True
@@ -124,7 +130,7 @@ def process_zip_file(zip_path: Path, key: bytes, excel_path: str) -> bool:
                     temp_inner.unlink()
 
     except Exception as e:
-        print(f"[ERROR] Failed to process {filename}: {e}")
+        logger.error(f"[ERROR] Failed to process {filename}: {e}")
         return False
 
 
@@ -138,80 +144,78 @@ def append_to_excel(
 ):
     """Append results to Excel file."""
     # Prepare headers
-    base_cols = ["student_id", "uploaded_id", "timestamp"]
+    base_cols = [FieldNames.STUDENT_ID, "uploaded_id", FieldNames.TIMESTAMP]
 
-    # Sort question keys
-    question_keys = sorted(
-        questions.keys(),
-        key=lambda k: int(k[1:]) if k.startswith("q") and k[1:].isdigit() else k,
-    )
+    # Sort question keys numeric q-keys (q1, q2...) by numeric order
+    def _question_sort_key(k: str):
+        if k.startswith("q") and k[1:].isdigit():
+            return (0, int(k[1:]))
+        return (1, k)
 
-    # For each question, we want just one column: q1, q2, q3, ...
-    # Contains score if passed, feedback if failed
+    question_keys = sorted(questions.keys(), key=_question_sort_key)
     question_cols = [qk for qk in question_keys]
 
-    all_cols = base_cols + question_cols + ["total_score"]
+    all_cols = base_cols + question_cols + [FieldNames.TOTAL_SCORE]
 
     # Prepare row data
-    new_row = [student_id_zip, uploaded_id, timestamp]
+    # Ensure all row values are strings to satisfy Excel writer typing
+    new_row = [str(student_id_zip), str(uploaded_id), str(timestamp)]
     for qk in question_keys:
-        new_row.append(questions.get(qk, ""))
-    new_row.append(total_score)
+        new_row.append(str(questions.get(qk, "")))
+    new_row.append(str(total_score))
 
     # Load or create workbook
     if os.path.exists(excel_path):
         wb = load_workbook(excel_path)
         ws = wb.active
+        ws_any: Any = ws
 
         # Update headers if needed
-        existing = [cell.value for cell in ws[1]]
+        existing = [cell.value for cell in ws_any[1]]
         for idx, col in enumerate(all_cols):
             if idx >= len(existing) or existing[idx] != col:
-                ws.cell(row=1, column=idx + 1).value = col
+                ws_any.cell(row=1, column=idx + 1).value = col
     else:
         wb = Workbook()
         ws = wb.active
+        ws_any: Any = ws
         for idx, col in enumerate(all_cols):
-            ws.cell(row=1, column=idx + 1).value = col
+            ws_any.cell(row=1, column=idx + 1).value = col
 
     # Append row
-    ws.append(new_row)
+    ws_any.append(new_row)
     wb.save(excel_path)
-    print(
-        f"[INFO] Appended to {excel_path}: {student_id_zip} -> total_score: {total_score}"
+    logger.info(
+        f"Appended to {excel_path}: {student_id_zip} -> total_score: {total_score}"
     )
 
 
 def main():
     """Main function to process all ZIP files in current directory."""
-    current_dir = Path.cwd()
     excel_path = "grades.xlsx"
 
-    # Get encryption key
-    key = get_key()
+    key = get_or_create_key(KEY_PATH)
 
     # Find all ZIP files in current directory
-    zip_files = list(current_dir.glob("*.zip"))
+    zip_files = sorted(Path(".").glob("*.zip"))
 
     if not zip_files:
-        print("[INFO] No ZIP files found in current directory")
+        logger.info("No ZIP files found in current directory")
         return
 
-    print(f"[INFO] Found {len(zip_files)} ZIP file(s) to process")
-    print(f"[INFO] Output will be saved to: {excel_path}")
-    print("-" * 60)
+    logger.info(f"Found {len(zip_files)} ZIP file(s) to process")
+    logger.info(f"Output will be saved to: {excel_path}")
+    logger.info("-" * 60)
 
     success_count = 0
     for zip_path in zip_files:
         if process_zip_file(zip_path, key, excel_path):
             success_count += 1
-        print()
+        logger.info("")  # Empty line
 
-    print("-" * 60)
-    print(
-        f"[SUMMARY] Successfully processed {success_count}/{len(zip_files)} ZIP files"
-    )
-    print(f"[SUMMARY] Results saved to: {excel_path}")
+    logger.info("-" * 60)
+    logger.info(f"Successfully processed {success_count}/{len(zip_files)} ZIP files")
+    logger.info(f"Results saved to: {excel_path}")
 
 
 if __name__ == "__main__":
